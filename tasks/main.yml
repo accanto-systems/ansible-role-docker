@@ -1,0 +1,90 @@
+####################################################################
+# Install docker and add insecure registries
+####################################################################
+
+- name: Gather exsting docker version
+  package_facts:
+    manager: auto
+
+- name: Check current docker version
+  set_fact:
+    docker_ok: "{{ ansible_facts.packages is defined and 'docker-ce' in ansible_facts.packages and ansible_facts.packages['docker-ce']|length>0 and 'version' in ansible_facts.packages['docker-ce'][0] and ansible_facts.packages['docker-ce'][0]['version'] == docker_version }}"
+
+- name: Install Docker 
+  when: docker_ok != True
+  block:
+    - name: Delete existing docker-ce version
+      apt:
+        name: docker-ce
+        state: absent 
+        force: yes
+      become: yes
+    
+    - name: Install base dependencies
+      apt: 
+        name: ['apt-transport-https','ca-certificates','curl','software-properties-common'] 
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key: 
+        url: https://download.docker.com/linux/ubuntu/gpg
+        
+    - name: Determine Docker APT repository
+      shell: echo "deb https://download.docker.com/linux/$(. /etc/os-release; echo $ID) $(lsb_release -cs) stable"
+      register: docker_apt_repository_output
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: "{{ docker_apt_repository_output.stdout }}"
+        state: present
+        update_cache: yes
+
+    - name: Install docker-ce package
+      apt: 
+        name: ["docker-ce={{ docker_version }}"]
+        state: present 
+        force: yes
+      become: yes
+
+- name: Configure Docker insecure registries
+  import_tasks: add-insecure-registries.yml
+  when: (docker_insecure_registries | default([]) | length>0)
+
+- name: Check current docker-compose version
+  shell: docker-compose --version
+  register: current_docker_compose_version
+  changed_when: False
+  failed_when: False
+
+- name: Install Docker Compose
+  when: current_docker_compose_version.stdout is defined and docker_compose_version not in current_docker_compose_version.stdout
+  block:
+    - name: Reading uname
+      shell: uname -s
+      register: uname_s
+
+    - name: Reading uname
+      shell: uname -m
+      register: uname_m
+
+    - name: Find existing docker-compose
+      shell: which docker-compose
+      register: current_docker_compose_path
+      failed_when: false
+
+    - name: Delete existing docker-compose version
+      file:
+        path: current_docker_compose_path.stdout
+        state: absent
+      when: current_docker_compose_path.stdout is defined and current_docker_compose_path.stdout|length>0
+      
+    - name: Uninstall Docker Compose (pip)
+      pip: 
+        name: docker-compose
+        state: absent
+
+    - name: Install Docker Compose (pip)
+      pip: 
+        name: docker-compose=={{docker_compose_version}}
+        state: present
+
