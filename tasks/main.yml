@@ -2,6 +2,18 @@
 # Install docker and add insecure registries
 ####################################################################
 
+- name: Update apt cache
+  raw: apt-get -y update
+
+- name: Install base dependencies
+  apt: 
+    name: 
+      - python
+      - python-pip
+      - python-apt
+    state: present 
+  become: yes
+
 - name: Gather exsting docker version
   package_facts:
     manager: auto
